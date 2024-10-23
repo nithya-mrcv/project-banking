@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+
+    tools {
+        maven "m3"
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                git 'https://github.com/nithya-mrcv/banking-finance.git'
+            }
+        }
+
+        stage('Compile') {
+            steps {
+                sh "mvn compile"
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh "mvn test"
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh "mvn package"
+            }
+        }
+
+        stage('Image-Docker') {
+            steps {
+                // Enable BuildKit by adding this environment variable
+                sh "docker build -t proj-bank ."
+            }
+        }
+
+        // Uncomment if you want to create a container
+        // stage('Creating Container') {
+        //     steps {
+        //         sh "docker run -d -p 8081:8081 proj-bank:latest"
+        //     }
+        // }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nithya-docker', passwordVariable: 'docker_pass', usernameVariable: 'docker_login')]) {
+                    sh "docker login -u $docker_login -p $docker_pass"
+                }
+            }
+        }
+
+        stage('Docker Tag & Push') {
+            steps {
+                sh "docker tag proj-bank nithya789/proj-bank:latest"
+                sh "docker push nithya789/proj-bank:latest"
+            }
+        }
+
+        stage('Configuration') {
+            steps {     
+                withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: '637423209894', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    dir('terraform') {
+                        sh 'terraform init'
+                        sh 'terraform validate'
+                        sh 'terraform apply --auto-approve'  
+                    }
+                }
+            }
+        }
+
+        stage("Pushing to Production") {
+            steps {
+                ansiblePlaybook(
+                    become: true,
+                    credentialsId: 'ansible',
+                    disableHostKeyChecking: true,
+                    installation: 'ansible',
+                    inventory: '/etc/ansible/hosts',
+                    playbook: '/var/lib/jenkins/workspace/Proj-bank/prod.yml',
+                    vaultTmpPath: ''
+                )   
+            }
+        }
+    }
+}
