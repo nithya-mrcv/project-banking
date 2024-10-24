@@ -1,13 +1,15 @@
 pipeline {
-    agent any
+    agent { label 'node' }
 
     tools {
+        // Maven configured "M3"
         maven "m3"
     }
 
     stages {
-        stage('Build') {
+        stage('Pull from Source') {
             steps {
+                // Get code from git repo with credentials
                 git 'https://github.com/nithya-mrcv/banking-finance.git'
             }
         }
@@ -30,21 +32,20 @@ pipeline {
             }
         }
 
-        stage('Image-Docker') {
+        stage('Image') {
             steps {
-                // Enable BuildKit by adding this environment variable
-                sh "docker build -t proj-bank ."
+                sh "docker build -t bankingproj ."
             }
         }
 
-        // Uncomment if you want to create a container
-        // stage('Creating Container') {
+        // Uncomment this stage if you need to create a container
+        // stage('Create Container') {
         //     steps {
-        //         sh "docker run -d -p 8081:8081 proj-bank:latest"
+        //         sh "docker run -d -p 8081:8081 bankingproj:latest"
         //     }
         // }
 
-        stage('Docker Login') {
+        stage('CICD Docker Login') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nithya-docker', passwordVariable: 'docker_pass', usernameVariable: 'docker_login')]) {
                     sh "docker login -u $docker_login -p $docker_pass"
@@ -52,36 +53,26 @@ pipeline {
             }
         }
 
-        stage('Docker Tag & Push') {
+        stage('Tag & Push') {
             steps {
-                sh "docker tag proj-bank nithya789/proj-bank:latest"
-                sh "docker push nithya789/proj-bank:latest"
+                sh "docker tag bankingproj nithya789/bankingproj:latest"
+                sh "docker push nithya789/bankingproj:latest"
             }
         }
-
-        stage('Configuration') {
-            steps {     
-                withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: '637423209894', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+        stage('Terraform') {
+            steps {
+                withCredentials([aws(accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: '637423388510', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     dir('terraform') {
                         sh 'terraform init'
                         sh 'terraform validate'
-                        sh 'terraform apply --auto-approve'  
+                        sh 'terraform apply --auto-approve'
                     }
                 }
             }
         }
-
-        stage("Pushing to Production") {
+        stage('Ansible Deployment') {
             steps {
-                ansiblePlaybook(
-                    become: true,
-                    credentialsId: 'ansible',
-                    disableHostKeyChecking: true,
-                    installation: 'ansible',
-                    inventory: '/etc/ansible/hosts',
-                    playbook: '/var/lib/jenkins/workspace/Proj-bank/prod.yml',
-                    vaultTmpPath: ''
-                )   
+                ansiblePlaybook credentialsId: 'ansible', disableHostKeyChecking: true, installation: 'ansible', inventory: '/etc/ansible/hosts', playbook: '/home/ubuntu/workspace/finance and banking/prod.yml', vaultTmpPath: ''
             }
         }
     }
